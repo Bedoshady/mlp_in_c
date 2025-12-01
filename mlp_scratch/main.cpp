@@ -22,14 +22,11 @@ enum activation_function {
 	softmax
 };
 
-struct node {
-	float Value;
-	float Bias;
-//	float IntermediateValue;
-};
 
 struct layer {
-	node* Nodes;
+	//node* Nodes;
+	float* Value;
+	float* Bias;
 	int NumberOfNodes;
 
 	activation_function ActivationFunction;
@@ -48,23 +45,22 @@ void InitializeMLP(mlp* Mlp, int NodesPerInput, int NodesPerHiddenLayer,
 	Mlp->Layers = new layer[Mlp->NumberOfLayers];
 
 	Mlp->Layers[0].NumberOfNodes = NodesPerInput;
-	Mlp->Layers[0].Nodes = new node[Mlp->Layers[0].NumberOfNodes];
+	Mlp->Layers[0].Value = new float[Mlp->Layers[0].NumberOfNodes];
+	//dont do any biases for the first one
 	Mlp->Layers[0].ActivationFunction = sigmoid;
 
 	for (int LayerIndex = 1; LayerIndex < NumberOfHiddenLayers + 1; LayerIndex++) {
 		
 		if (LayerIndex == 1) {
 			Mlp->Layers[LayerIndex].NumberOfNodes = 128;
-			Mlp->Layers[LayerIndex].Nodes = new node[128];
+			Mlp->Layers[LayerIndex].Value = new float[128];
+			Mlp->Layers[LayerIndex].Bias = new float[128];
+
 		}
 		else if(LayerIndex == 2){
 			Mlp->Layers[LayerIndex].NumberOfNodes = 64;
-			Mlp->Layers[LayerIndex].Nodes = new node[64];
-		}
-		else {
-			Mlp->Layers[LayerIndex].NumberOfNodes = 50;
-			Mlp->Layers[LayerIndex].Nodes = new node[50];
-
+			Mlp->Layers[LayerIndex].Value = new float[64];
+			Mlp->Layers[LayerIndex].Bias = new float[64];
 		}
 		
 		
@@ -78,7 +74,9 @@ void InitializeMLP(mlp* Mlp, int NodesPerInput, int NodesPerHiddenLayer,
 		Mlp->Layers[LayerIndex].ActivationFunction = relu;
 	}
 	Mlp->Layers[Mlp->NumberOfLayers - 1].NumberOfNodes = NodesPerOutput;
-	Mlp->Layers[Mlp->NumberOfLayers - 1].Nodes = new node[Mlp->Layers[Mlp->NumberOfLayers - 1].NumberOfNodes];
+	Mlp->Layers[Mlp->NumberOfLayers - 1].Value = new float[Mlp->Layers[Mlp->NumberOfLayers - 1].NumberOfNodes];
+	Mlp->Layers[Mlp->NumberOfLayers - 1].Bias = new float[Mlp->Layers[Mlp->NumberOfLayers - 1].NumberOfNodes];
+
 	Mlp->Layers[Mlp->NumberOfLayers - 1].ActivationFunction = softmax;
 
 	Mlp->NumberOfMatrices = Mlp->NumberOfLayers - 1;
@@ -95,7 +93,7 @@ void InitializeMLP(mlp* Mlp, int NodesPerInput, int NodesPerHiddenLayer,
 void RandomizeMlp(mlp* Mlp) {
 	for (int LayerIndex = 0; LayerIndex < Mlp->NumberOfLayers - 1; LayerIndex++) {
 		for (int NodeIndex = 0; NodeIndex < Mlp->Layers[LayerIndex + 1].NumberOfNodes; NodeIndex++) {
-			Mlp->Layers[LayerIndex + 1].Nodes[NodeIndex].Bias = 2.0 * rand() / RAND_MAX - 1;
+			Mlp->Layers[LayerIndex + 1].Bias[NodeIndex] = 2.0 * rand() / RAND_MAX - 1;
 		}
 		for (int WeightIndex = 0; WeightIndex < Mlp->Matrices[LayerIndex].NumberOfRows *
 			Mlp->Matrices[LayerIndex].NumberOfColumns; WeightIndex++) {
@@ -128,45 +126,77 @@ inline float ApplyActivationFunction(float Input, activation_function Function) 
 	//return 1000;
 
 }
-
+int Counter = 0;
 void MatrixMultiply(weight_matrix* Matrix, layer* Input, layer* Output, bool IsOutputLayer) {
 	float Total = 0;
 	float Max = -1;
 	const int NumberOfRows = Matrix->NumberOfRows;
 	const int NumberOfColumns = Matrix->NumberOfColumns;
-	int WeightIndex = 0;
+	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+	const bool NumberOfColumnsEven = (NumberOfColumns % 2) == 0;
 	for (int RowIndex = 0; RowIndex < NumberOfRows; RowIndex++) {
-		Output->Nodes[RowIndex].Value = 0;
-		for (int ColIndex = 0; ColIndex < NumberOfColumns; ColIndex++) {
-			Output->Nodes[RowIndex].Value += Input->Nodes[ColIndex].Value *  Matrix->Weights[WeightIndex];
-			WeightIndex++;
-			
-		}
-		Output->Nodes[RowIndex].Value += Output->Nodes[RowIndex].Bias;
-		//Output->Nodes[RowIndex].IntermediateValue = Output->Nodes[RowIndex].Value;
-
+		//Output->Value[RowIndex] = 
 		
+		
+		float sum1 = 0.0;
+		float sum2 = 0.0;
+		if (NumberOfColumnsEven) {
+			for (int ColIndex = 0; ColIndex < NumberOfColumns; ColIndex += 2) {
+				sum1 += Input->Value[ColIndex] * Matrix->Weights[RowIndex * NumberOfColumns + ColIndex];
+				sum2 += Input->Value[ColIndex + 1] * Matrix->Weights[RowIndex * NumberOfColumns + ColIndex + 1];
+
+			}
+		}
+		else {
+			for (int ColIndex = 0; ColIndex < NumberOfColumns - 1; ColIndex += 2) {
+				sum1 += Input->Value[ColIndex] * Matrix->Weights[RowIndex * NumberOfColumns + ColIndex];
+				sum2 += Input->Value[ColIndex + 1] * Matrix->Weights[RowIndex * NumberOfColumns + ColIndex + 1];
+			}
+			sum1 += Input->Value[NumberOfColumns - 1] * Matrix->Weights[RowIndex * NumberOfColumns + NumberOfColumns - 1];
+		}
+		Output->Value[RowIndex] = sum1 + sum2 + Output->Bias[RowIndex];
+		
+		
+		/*
+		float Sum = 0;
+		//Output->Value[RowIndex] = 0;
+		for (int ColIndex = 0; ColIndex < NumberOfColumns; ColIndex += 1) {
+			//Sum 
+			Sum += Input->Value[ColIndex] * Matrix->Weights[RowIndex * NumberOfColumns + ColIndex];
+			//sum += Input->Value[ColIndex + 1] * Matrix->Weights[RowIndex * NumberOfColumns + ColIndex + 1];
+
+		}
+		Output->Value[RowIndex] = Sum + Output->Bias[RowIndex];
+		*/
+		//Output->Value[RowIndex] += Output->Bias[RowIndex];
+
+		//Output->Value[RowIndex] +=;
+		//Output->Nodes[RowIndex].IntermediateValue = Output->Nodes[RowIndex].Value;
 	}
-	Max = Output->Nodes[0].Value;
+	Max = Output->Value[0];
 	for (int RowIndex = 0; RowIndex < NumberOfRows; RowIndex++) {
 		if (!IsOutputLayer || Output->ActivationFunction != softmax)
-			Output->Nodes[RowIndex].Value = ApplyActivationFunction(Output->Nodes[RowIndex].Value, Output->ActivationFunction);
-		if (Output->Nodes[RowIndex].Value > Max) {
-			Max = Output->Nodes[RowIndex].Value;
+			Output->Value[RowIndex] = (Output->ActivationFunction == sigmoid) * (1.0f / (1.0f + exp(-Output->Value[RowIndex]))) + (Output->ActivationFunction == relu) * (Output->Value[RowIndex] > 0) * Output->Value[RowIndex];//ApplyActivationFunction(Output->Value[RowIndex], Output->ActivationFunction);
+		else if (Output->Value[RowIndex] > Max) {
+			Max = Output->Value[RowIndex];
 		}
 	}
+
 
 	if (IsOutputLayer && Output->ActivationFunction == softmax) {
 		Total = 0;
 		for (int NodeIndex = 0; NodeIndex < Output->NumberOfNodes; NodeIndex++) {
-			Output->Nodes[NodeIndex].Value = exp(Output->Nodes[NodeIndex].Value - Max);
-			Total += Output->Nodes[NodeIndex].Value;
+			Output->Value[NodeIndex] = exp(Output->Value[NodeIndex] - Max);
+			Total += Output->Value[NodeIndex];
 		}
 		
 		for (int NodeIndex = 0; NodeIndex < Output->NumberOfNodes; NodeIndex++) {
-			Output->Nodes[NodeIndex].Value /= Total;
+			Output->Value[NodeIndex] /= Total;
 		}
 	}
+	std::chrono::steady_clock::time_point Backprob = std::chrono::steady_clock::now();
+	//if(Counter % 1000 == 0)
+	//std::cout << "Backprob time = " << std::chrono::duration_cast<std::chrono::microseconds>(Backprob - begin).count() << "[us] number of Cols" << NumberOfColumns << std::endl;
 }
 
 
@@ -227,7 +257,7 @@ void TrainMlp(mlp* Mlp, layer* InputLayers, layer* ExpectedOutputs, int NumberOf
 
 	for (int LayerIndex = 0; LayerIndex < Mlp->NumberOfLayers - 1; LayerIndex++) {
 		LayerDeratives[LayerIndex].NumberOfNodes = Mlp->Layers[LayerIndex + 1].NumberOfNodes;
-		LayerDeratives[LayerIndex].Deratives = new float[Mlp->Layers[LayerIndex + 1].NumberOfNodes];
+		LayerDeratives[LayerIndex].Deratives = new float[Mlp->Layers[LayerIndex + 1].NumberOfNodes]{};
 	
 		BiasDeratives[LayerIndex].NumberOfNodes = Mlp->Layers[LayerIndex + 1].NumberOfNodes;
 		BiasDeratives[LayerIndex].Deratives = new float[Mlp->Layers[LayerIndex + 1].NumberOfNodes]{};
@@ -242,8 +272,9 @@ void TrainMlp(mlp* Mlp, layer* InputLayers, layer* ExpectedOutputs, int NumberOf
 	for (int ExampleIndex = 0; ExampleIndex < NumberOfExamples; ExampleIndex++) {
 
 		for (int NodeIndex = 0; NodeIndex < InputLayers[ExampleIndex].NumberOfNodes; NodeIndex++) {
-			Mlp->Layers[0].Nodes[NodeIndex].Value = InputLayers[ExampleIndex].Nodes[NodeIndex].Value;
+			Mlp->Layers[0].Value[NodeIndex] = InputLayers[ExampleIndex].Value[NodeIndex];
 		}
+
 		FarwardPass(Mlp);
 		/*
 		std::chrono::steady_clock::time_point Farward = std::chrono::steady_clock::now();
@@ -252,45 +283,58 @@ void TrainMlp(mlp* Mlp, layer* InputLayers, layer* ExpectedOutputs, int NumberOf
 		*/
 		
 		for (int NodeIndex = 0; NodeIndex < ExpectedOutputs[ExampleIndex].NumberOfNodes; NodeIndex++) {
-			if (Mlp->Layers[Mlp->NumberOfLayers - 2].ActivationFunction != softmax) {
-				LayerDeratives[Mlp->NumberOfLayers - 2].Deratives[NodeIndex] = 1.0f/2.0f * (Mlp->Layers[Mlp->NumberOfLayers - 1].Nodes[NodeIndex].Value - ExpectedOutputs[ExampleIndex].Nodes[NodeIndex].Value);
+			if (Mlp->Layers[Mlp->NumberOfLayers - 1].ActivationFunction != softmax) {
+				LayerDeratives[Mlp->NumberOfLayers - 2].Deratives[NodeIndex] = 1.0f/2.0f * (Mlp->Layers[Mlp->NumberOfLayers - 1].Value[NodeIndex] - ExpectedOutputs[ExampleIndex].Value[NodeIndex]);
 			}
 			else {
-				LayerDeratives[Mlp->NumberOfLayers - 2].Deratives[NodeIndex] = Mlp->Layers[Mlp->NumberOfLayers - 1].Nodes[NodeIndex].Value - ExpectedOutputs[ExampleIndex].Nodes[NodeIndex].Value;
+				LayerDeratives[Mlp->NumberOfLayers - 2].Deratives[NodeIndex] = Mlp->Layers[Mlp->NumberOfLayers - 1].Value[NodeIndex] - ExpectedOutputs[ExampleIndex].Value[NodeIndex];
 			}
 		}
 		
 		//std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
+		//std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 		for (int DerativeMatrixIndex = Mlp->NumberOfLayers - 2; DerativeMatrixIndex >= 0; DerativeMatrixIndex--) {
 			int NumberOfRows = WeightDeratives[DerativeMatrixIndex].NumberOfRows;
 			int NumberOfColumns = WeightDeratives[DerativeMatrixIndex].NumberOfColumns;
 			activation_function ActiveFunction = Mlp->Layers[DerativeMatrixIndex + 1].ActivationFunction;
 			
-			layer* CurrentLayer = &Mlp->Layers[DerativeMatrixIndex + 1];
-			layer* PreviousLayer = &Mlp->Layers[DerativeMatrixIndex];
-			weight_matrix_derivative* CurrentDerivativeMatrix = &WeightDeratives[DerativeMatrixIndex];
-			layer_deratives* CurrentLayerDerative = &LayerDeratives[DerativeMatrixIndex - 1];
-			layer_deratives* CurrentBiasDerative = &BiasDeratives[DerativeMatrixIndex];
 			
+			weight_matrix* MatrixWeights = &Mlp->Matrices[DerativeMatrixIndex];
+			weight_matrix_derivative* DerivativeMatrix = &WeightDeratives[DerativeMatrixIndex];
+
+			layer* LeftLayer  = &Mlp->Layers[DerativeMatrixIndex];
+			layer* RightLayer = &Mlp->Layers[DerativeMatrixIndex + 1];
+			//layer_deratives LeftLayerDerivative =;
+			layer_deratives* RightLayerDerivative = &LayerDeratives[DerativeMatrixIndex];
+			layer_deratives* RightBiasDerivative  = &BiasDeratives[DerativeMatrixIndex];
+
 			for (int WeightRowIndex = 0; WeightRowIndex < NumberOfRows; WeightRowIndex++) {
-				float ActivationFunctionDerivative = (ActiveFunction == relu) ? (CurrentLayer->Nodes[WeightRowIndex].Value > 0) : (ActiveFunction == softmax);// 
+				float ActivationFunctionDerivative = (ActiveFunction == relu) ? (RightLayer->Value[WeightRowIndex] > 0) : (ActiveFunction == softmax);// 
 				//ComputeDerivativeOfActivationFunction(CurrentLayer->Nodes[WeightRowIndex].Value, ActiveFunction);
-				float CommonDelta = ActivationFunctionDerivative * LayerDeratives[DerativeMatrixIndex].Deratives[WeightRowIndex];
+				float CommonDelta = ActivationFunctionDerivative * RightLayerDerivative->Deratives[WeightRowIndex];
 
 				for (int WeightColIndex = 0; WeightColIndex < NumberOfColumns; WeightColIndex++) {
-					CurrentDerivativeMatrix->Weights[WeightRowIndex * NumberOfColumns + WeightColIndex] = PreviousLayer->Nodes[WeightColIndex].Value * CommonDelta;
-					
+					DerivativeMatrix->Weights[WeightRowIndex * NumberOfColumns + WeightColIndex] = LeftLayer->Value[WeightColIndex] * CommonDelta;
 				}
+				
+				
 				if (DerativeMatrixIndex != 0) {
 					for (int WeightColIndex = 0; WeightColIndex < NumberOfColumns; WeightColIndex++) {
-						CurrentLayerDerative->Deratives[WeightColIndex] += Mlp->Matrices[DerativeMatrixIndex].Weights[WeightRowIndex * NumberOfColumns + WeightColIndex] * CommonDelta;
+						LayerDeratives[DerativeMatrixIndex - 1].Deratives[WeightColIndex] += MatrixWeights->Weights[WeightRowIndex * NumberOfColumns + WeightColIndex] * CommonDelta;
 					}
 				}
-				CurrentBiasDerative->Deratives[WeightRowIndex] = CommonDelta;
+				
+				
+				
+				RightBiasDerivative->Deratives[WeightRowIndex] = CommonDelta;
 			}
 		
 		}
+		
+		
+		
+		
 		//std::chrono::steady_clock::time_point Backprob = std::chrono::steady_clock::now();
 		//std::cout << "Weight matrix update time = " << std::chrono::duration_cast<std::chrono::microseconds>(Backprob - begin).count() << "[us]" << std::endl;
 
@@ -298,7 +342,6 @@ void TrainMlp(mlp* Mlp, layer* InputLayers, layer* ExpectedOutputs, int NumberOf
 		for (int MatrixIndex = 0; MatrixIndex < Mlp->NumberOfLayers - 1; MatrixIndex++) {
 			int NumberOfColumns = Mlp->Matrices[MatrixIndex].NumberOfColumns;
 			int NumberOfRows = Mlp->Matrices[MatrixIndex].NumberOfRows;
-			int WeightIndex = 0;
 			int LayerIndex = MatrixIndex;
 
 			layer* CurrentLayer = &Mlp->Layers[LayerIndex + 1];
@@ -309,11 +352,11 @@ void TrainMlp(mlp* Mlp, layer* InputLayers, layer* ExpectedOutputs, int NumberOf
 
 			for (int WeightRowIndex = 0; WeightRowIndex < NumberOfRows; WeightRowIndex++) {
 				for (int WeightColIndex = 0; WeightColIndex < NumberOfColumns; WeightColIndex++) {
-					CurrentWeightMatrix->Weights[WeightIndex] -= CurrentDerivativeMatrix->Weights[WeightIndex] * LearningRate;
+					CurrentWeightMatrix->Weights[WeightRowIndex * NumberOfColumns + WeightColIndex] -= CurrentDerivativeMatrix->Weights[WeightRowIndex * NumberOfColumns + WeightColIndex] * LearningRate;
 					//CurrentDerivativeMatrix->Weights[WeightIndex] = 0;
-					WeightIndex++;
+					//WeightIndex++;
 				}	
-				CurrentLayer->Nodes[WeightRowIndex].Bias -= CurrentBiasDerative->Deratives[WeightRowIndex] * LearningRate;
+				CurrentLayer->Bias[WeightRowIndex] -= CurrentBiasDerative->Deratives[WeightRowIndex] * LearningRate;
 				CurrentLayerDerative->Deratives[WeightRowIndex] = 0;
 				//CurrentBiasDerative->Deratives[WeightRowIndex] = 0;
 
@@ -321,8 +364,10 @@ void TrainMlp(mlp* Mlp, layer* InputLayers, layer* ExpectedOutputs, int NumberOf
 		}
 		
 
+	//std::chrono::steady_clock::time_point Backprob = std::chrono::steady_clock::now();
+	//std::cout << "Backprob time = " << std::chrono::duration_cast<std::chrono::microseconds>(Backprob - begin).count() << "[us]" << std::endl;
+
 	}
-	
 	for (int LayerIndex = 0; LayerIndex < Mlp->NumberOfLayers - 1; LayerIndex++) {
 		delete[] LayerDeratives[LayerIndex].Deratives;
 		delete[] BiasDeratives[LayerIndex].Deratives;
@@ -350,7 +395,7 @@ void main() {
 
 	for (int TrainingExample = 0; TrainingExample < NumberOfExamples; TrainingExample++) {
 		Input[TrainingExample].NumberOfNodes = 784;
-		Input[TrainingExample].Nodes = new node[784];
+		Input[TrainingExample].Value = new float[784];
 
 		for (int i = 0; i < 784; i++) {
 			/*
@@ -361,31 +406,31 @@ void main() {
 				Input[TrainingExample].Nodes[i].Value = 0;
 			}
 			*/
-			Input[TrainingExample].Nodes[i].Value = TrainingData.Examples[TrainingExample].InputValues[i] / 255.0f;
+			Input[TrainingExample].Value[i] = TrainingData.Examples[TrainingExample].InputValues[i] / 255.0f;
 			if (TrainingData.Examples[TrainingExample].InputValues[i] > 255) {
 				std::cout << "Error in reading data\n";
 			}
 		}
 
 		ExpectedOutput[TrainingExample].NumberOfNodes = 10;
-		ExpectedOutput[TrainingExample].Nodes = new node[10];
+		ExpectedOutput[TrainingExample].Value = new float[10];
 
 		for (int i = 0; i < 10; i++) {
-			ExpectedOutput[TrainingExample].Nodes[i].Value = 0;
+			ExpectedOutput[TrainingExample].Value[i] = 0;
 		}
-		ExpectedOutput[TrainingExample].Nodes[(int)(TrainingData.Examples[TrainingExample].ExpectedOutput)].Value = 1;
+		ExpectedOutput[TrainingExample].Value[(int)(TrainingData.Examples[TrainingExample].ExpectedOutput)] = 1;
 		delete[] TrainingData.Examples[TrainingExample].InputValues;
 
 	}
 	delete[] TrainingData.Examples;
 
-	for (int Iteration = 0; Iteration < 2; Iteration++)
+	for (int Iteration = 0; Iteration < 5; Iteration++)
 	{
 		std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 		std::cout << "Iteration Number: " << Iteration << "\n";
 		TrainMlp(&Mlp, Input, ExpectedOutput, NumberOfExamples);
 		std::chrono::steady_clock::time_point Backprob = std::chrono::steady_clock::now();
-		std::cout << "Backprob time = " << std::chrono::duration_cast<std::chrono::seconds>(Backprob - begin).count() << "[us]" << std::endl;
+		printf("Total time = %.2f [s]\n", std::chrono::duration_cast<std::chrono::milliseconds>(Backprob - begin).count() / 1000.0f);
 
 	}	
 
@@ -395,21 +440,21 @@ void main() {
 		
 		for (int i = 0; i < 784; i++) {
 			if (TestData.Examples[TestExample].InputValues[i] > 128) {
-				Mlp.Layers[0].Nodes[i].Value = 1;
+				Mlp.Layers[0].Value[i] = 1;
 			}
 			else {
-				Mlp.Layers[0].Nodes[i].Value = 0;
+				Mlp.Layers[0].Value[i] = 0;
 			}
 			//Mlp.Layers[0].Nodes[i].Value = TestData.Examples[TestExample].InputValues[i] / 255.0f;
 		}
 		FarwardPass(&Mlp);
 		int OutputIndex = 0;
-		float Probability = Mlp.Layers[Mlp.NumberOfLayers - 1].Nodes[0].Value;
+		float Probability = Mlp.Layers[Mlp.NumberOfLayers - 1].Value[0];
 		for (int i = 1; i < 10; i++) {
-			if (Mlp.Layers[Mlp.NumberOfLayers - 1].Nodes[i].Value > Probability)
+			if (Mlp.Layers[Mlp.NumberOfLayers - 1].Value[i] > Probability)
 			{
 				OutputIndex = i;
-				Probability = Mlp.Layers[Mlp.NumberOfLayers - 1].Nodes[i].Value;
+				Probability = Mlp.Layers[Mlp.NumberOfLayers - 1].Value[i];
 			}
 		}
 		/*
